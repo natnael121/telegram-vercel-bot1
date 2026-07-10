@@ -22,75 +22,75 @@ export async function POST(req: NextRequest) {
       caption = '',
       mediaUrl,
       mediaType = 'text',
-      mediaUrls,
-      pollData,
-      sourceLink,
+      mediaUrls: mediaUrls ?? [],
+        pollData,
+        sourceLink,
     } = body;
 
-    // Check duplicate
-    const isDuplicate = await postService.checkDuplicate(sourceChannel, messageId);
-    if (isDuplicate) {
-      await telegramPublisher.notifyAdmin(`⚠️ <b>Duplicate Detected</b>\nChannel: ${sourceChannel}\nMessage: #${messageId}`);
-      return NextResponse.json({ status: 'duplicate' });
-    }
-
-    // Auto-detect category using AI (optional)
-    let category = body.category || 'General';
-    if (!body.category && caption && process.env.OPENAI_API_KEY) {
-      try {
-        category = await aiService.detectCategory(caption);
-      } catch (_) {}
-    }
-
-    // Check spam
-    let isSpam = false;
-    if (caption && process.env.OPENAI_API_KEY) {
-      try {
-        isSpam = await aiService.detectSpam(caption);
-      } catch (_) {}
-    }
-
-    if (isSpam) {
-      await telegramPublisher.notifyAdmin(`🚫 <b>Spam Detected & Skipped</b>\nChannel: ${sourceChannel}\nPreview: ${caption.slice(0, 100)}`);
-      return NextResponse.json({ status: 'spam_rejected' });
-    }
-
-    // Save post
-    const postId = await postService.create({
-      sourceChannel,
-      messageId,
-      caption,
-      originalCaption: caption,
-      review: '',
-      mediaUrl: mediaUrl || null,
-      mediaType,
-      mediaUrls,
-      pollData,
-      sourceLink,
-      status: 'pending',
-      published: false,
-      category,
-      isEvent: false,
-    });
-
-    // Increment channel stats
-    await channelService.incrementPostCount(sourceChannel);
-
-    // Notify admin bot
-    const notifText =
-      `📨 <b>NEW POST</b>\n\n` +
-      `📡 Source: <b>${sourceChannel}</b>\n` +
-      `🕐 Time: <b>${new Date().toLocaleString()}</b>\n` +
-      `📂 Category: <b>${category}</b>\n` +
-      `🎬 Media: <b>${mediaType}</b>\n\n` +
-      `📝 <b>Caption:</b>\n${caption?.slice(0, 400) || '(no caption)'}\n\n` +
-      `Use /pending to review.`;
-
-    await telegramPublisher.notifyAdmin(notifText);
-
-    return NextResponse.json({ status: 'saved', postId });
-  } catch (error: any) {
-    console.error('Collect error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  // Check duplicate
+  const isDuplicate = await postService.checkDuplicate(sourceChannel, messageId);
+  if (isDuplicate) {
+    await telegramPublisher.notifyAdmin(`⚠️ <b>Duplicate Detected</b>\nChannel: ${sourceChannel}\nMessage: #${messageId}`);
+    return NextResponse.json({ status: 'duplicate' });
   }
+
+  // Auto-detect category using AI (optional)
+  let category = body.category || 'General';
+  if (!body.category && caption && process.env.OPENAI_API_KEY) {
+    try {
+      category = await aiService.detectCategory(caption);
+    } catch (_) { }
+  }
+
+  // Check spam
+  let isSpam = false;
+  if (caption && process.env.OPENAI_API_KEY) {
+    try {
+      isSpam = await aiService.detectSpam(caption);
+    } catch (_) { }
+  }
+
+  if (isSpam) {
+    await telegramPublisher.notifyAdmin(`🚫 <b>Spam Detected & Skipped</b>\nChannel: ${sourceChannel}\nPreview: ${caption.slice(0, 100)}`);
+    return NextResponse.json({ status: 'spam_rejected' });
+  }
+
+  // Save post
+  const postId = await postService.create({
+    sourceChannel,
+    messageId,
+    caption,
+    originalCaption: caption,
+    review: '',
+    mediaUrl: mediaUrl ?? null,
+    mediaType,
+    mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : [],
+    pollData: pollData ?? null,
+    sourceLink: sourceLink ?? '',
+    status: 'pending',
+    published: false,
+    category,
+    isEvent: false,
+  });
+
+  // Increment channel stats
+  await channelService.incrementPostCount(sourceChannel);
+
+  // Notify admin bot
+  const notifText =
+    `📨 <b>NEW POST</b>\n\n` +
+    `📡 Source: <b>${sourceChannel}</b>\n` +
+    `🕐 Time: <b>${new Date().toLocaleString()}</b>\n` +
+    `📂 Category: <b>${category}</b>\n` +
+    `🎬 Media: <b>${mediaType}</b>\n\n` +
+    `📝 <b>Caption:</b>\n${caption?.slice(0, 400) || '(no caption)'}\n\n` +
+    `Use /pending to review.`;
+
+  await telegramPublisher.notifyAdmin(notifText);
+
+  return NextResponse.json({ status: 'saved', postId });
+} catch (error: any) {
+  console.error('Collect error:', error);
+  return NextResponse.json({ error: error.message }, { status: 500 });
+}
 }
