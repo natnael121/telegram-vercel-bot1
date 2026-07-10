@@ -1,0 +1,10 @@
+.env
+.env.local
+node_modules/
+.next/
+collector/__pycache__/
+collector/*.session
+collector/*.session-journal
+*.pyc
+.DS_Store
+Thumbs.db
