@@ -238,7 +238,7 @@ Schedule posts for:
 - ⏰ Tomorrow (24h)
 - Custom — via `/schedule` command
 
-Vercel Cron runs every minute to check and publish due posts.
+Vercel Cron is configured to run once per day (daily at midnight UTC) in `vercel.json` to comply with Vercel Hobby account limits. If you upgrade to the Pro plan, you can change this back to `* * * * *` to check and publish due posts every minute.
 
 ---
 
