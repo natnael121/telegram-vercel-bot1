@@ -1,131 +1,144 @@
 // ============================================================
-//  AI Processing Service - OpenAI integration
+// AI Processing Service - OpenAI integration
 // ============================================================
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+async function askAI(
+  system: string,
+  text: string,
+  max_tokens: number
+): Promise<string> {
+
+  if (!openai) {
+    console.warn("OPENAI_API_KEY missing. AI feature disabled.");
+    return text;
+  }
+
+  const res = await openai.chat.completions.create({
+    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: system,
+      },
+      {
+        role: 'user',
+        content: text,
+      },
+    ],
+    max_tokens,
+  });
+
+  return res.choices[0].message.content || text;
+}
+
 
 export const aiService = {
-  async rewrite(text: string, style = 'professional news'): Promise<string> {
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a professional content editor. Rewrite the given text in a ${style} style. Keep it concise and engaging. Return only the rewritten text.`,
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 500,
-    });
-    return res.choices[0].message.content || text;
+
+  async rewrite(
+    text: string,
+    style = 'professional news'
+  ): Promise<string> {
+    return askAI(
+      `You are a professional content editor. Rewrite the text in a ${style} style. Keep it concise and engaging. Return only rewritten text.`,
+      text,
+      500
+    );
   },
+
 
   async summarize(text: string): Promise<string> {
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Summarize the following content in 2-3 sentences. Return only the summary.',
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 200,
-    });
-    return res.choices[0].message.content || text;
+    return askAI(
+      'Summarize the content in 2-3 sentences. Return only the summary.',
+      text,
+      200
+    );
   },
 
-  async translate(text: string, targetLang = 'English'): Promise<string> {
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `Translate the following text to ${targetLang}. Return only the translation.`,
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 600,
-    });
-    return res.choices[0].message.content || text;
+
+  async translate(
+    text: string,
+    targetLang = 'English'
+  ): Promise<string> {
+    return askAI(
+      `Translate the text to ${targetLang}. Return only the translation.`,
+      text,
+      600
+    );
   },
+
 
   async generateHashtags(text: string): Promise<string[]> {
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Generate 5 relevant hashtags for the following content. Return them as a comma-separated list without #.',
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 100,
-    });
-    const raw = res.choices[0].message.content || '';
-    return raw.split(',').map(h => `#${h.trim()}`).filter(Boolean);
+
+    const result = await askAI(
+      'Generate 5 relevant hashtags. Return comma separated words without #.',
+      text,
+      100
+    );
+
+    return result
+      .split(',')
+      .map(h => `#${h.trim()}`)
+      .filter(Boolean);
   },
+
 
   async generateTitle(text: string): Promise<string> {
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Generate a catchy title for the following content. Return only the title.',
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 60,
-    });
-    return res.choices[0].message.content || '';
+    return askAI(
+      'Generate a catchy title. Return only the title.',
+      text,
+      60
+    );
   },
+
 
   async detectSpam(text: string): Promise<boolean> {
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Determine if the following text is spam. Reply with only "yes" or "no".',
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 5,
-    });
-    return res.choices[0].message.content?.toLowerCase().includes('yes') || false;
+
+    const result = await askAI(
+      'Determine if this is spam. Reply only yes or no.',
+      text,
+      5
+    );
+
+    return result.toLowerCase().includes('yes');
   },
+
 
   async correctGrammar(text: string): Promise<string> {
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: 'Correct the grammar and spelling of the following text. Return only the corrected text.',
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 500,
-    });
-    return res.choices[0].message.content || text;
+    return askAI(
+      'Correct grammar and spelling. Return only corrected text.',
+      text,
+      500
+    );
   },
 
+
   async detectCategory(text: string): Promise<string> {
-    const categories = ['Technology', 'Sports', 'Crypto', 'News', 'Business', 'Entertainment', 'Health', 'Other'];
-    const res = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `Classify the following text into one of these categories: ${categories.join(', ')}. Return only the category name.`,
-        },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 20,
-    });
-    const cat = res.choices[0].message.content?.trim() || 'Other';
-    return categories.includes(cat) ? cat : 'Other';
+
+    const categories = [
+      'Technology',
+      'Sports',
+      'Crypto',
+      'News',
+      'Business',
+      'Entertainment',
+      'Health',
+      'Other'
+    ];
+
+    const result = await askAI(
+      `Classify this into one category: ${categories.join(', ')}. Return only category name.`,
+      text,
+      20
+    );
+
+    return categories.includes(result.trim())
+      ? result.trim()
+      : 'Other';
   },
+
 };

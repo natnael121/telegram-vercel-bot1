@@ -11,6 +11,7 @@ import hashlib
 import aiohttp
 from datetime import datetime, timezone
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from telethon.tl.types import (
     MessageMediaPhoto, MessageMediaDocument,
     MessageMediaPoll, MessageMediaWebPage,
@@ -29,7 +30,14 @@ COLLECT_API_URL = os.environ["WEBHOOK_URL"] + "/api/collect"
 COLLECT_SECRET = os.environ["WEBHOOK_SECRET"]
 CHANNELS_API_URL = os.environ["WEBHOOK_URL"] + "/api/channels"
 
-client = TelegramClient(SESSION, API_ID, API_HASH)
+client = TelegramClient(
+    StringSession(SESSION),
+    API_ID,
+    API_HASH,
+    connection_retries=10,
+    retry_delay=5,
+    auto_reconnect=True
+)
 
 # ── Helper: detect media type ─────────────────────────────────────────────────
 def get_media_type(message):
@@ -170,29 +178,30 @@ async def setup_listeners(session: aiohttp.ClientSession, channel_usernames: lis
 # ── Entry point ───────────────────────────────────────────────────────────────
 async def main():
     print("🚀 Telegram Channel Collector starting...")
-    await client.start(phone=PHONE)
+
+    await client.connect()
+
+    if not await client.is_user_authorized():
+        await client.start(phone=PHONE)
+
     print("✅ Logged in to Telegram")
 
     async with aiohttp.ClientSession() as session:
-        # Fetch enabled channels from Firestore (via API)
         channels = await get_enabled_channels(session)
         print(f"📡 Found {len(channels)} enabled channel(s): {channels}")
 
         if not channels:
-            print("⚠️  No channels configured. Add channels via the bot or dashboard.")
+            print("⚠️ No channels configured. Add channels via the bot or dashboard.")
             return
 
-        # Initial backfill
         print("📥 Collecting recent messages...")
         for ch in channels:
             await collect_new_messages(session, ch)
-            await asyncio.sleep(1)  # Rate limit
+            await asyncio.sleep(1)
 
-        # Setup real-time listener
         await setup_listeners(session, channels)
 
         print("🔄 Listening for new messages... (Press Ctrl+C to stop)")
         await client.run_until_disconnected()
-
 if __name__ == "__main__":
     asyncio.run(main())
