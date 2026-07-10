@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       caption = '',
       mediaUrl,
       mediaType = 'text',
-      mediaUrls = mediaUrls ?? [],
+      mediaUrls = [],
       pollData,
       sourceLink,
     } = body;

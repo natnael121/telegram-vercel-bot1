@@ -68,7 +68,14 @@ async def send_to_api(session: aiohttp.ClientSession, payload: dict) -> dict:
             headers={"x-collector-secret": COLLECT_SECRET, "Content-Type": "application/json"},
             timeout=aiohttp.ClientTimeout(total=15)
         ) as resp:
-            return await resp.json()
+            text = await resp.text()
+            try:
+                data = json.loads(text)
+            except Exception:
+                data = {"raw_response": text}
+            if resp.status != 200:
+                print(f"[ERROR] API returned status {resp.status}: {text}")
+            return data
     except Exception as e:
         print(f"[ERROR] Failed to send to API: {e}")
         return {}
