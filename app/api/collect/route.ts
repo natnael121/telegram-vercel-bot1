@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     // Check duplicate
     const isDuplicate = await postService.checkDuplicate(sourceChannel, messageId);
     if (isDuplicate) {
-      await telegramPublisher.notifyAdmin(`⚠️ <b>Duplicate Detected</b>\nChannel: ${sourceChannel}\nMessage: #${messageId}`);
+      console.log(`Duplicate detected: Channel: ${sourceChannel}, Message: #${messageId}`);
       return NextResponse.json({ status: 'duplicate' });
     }
 

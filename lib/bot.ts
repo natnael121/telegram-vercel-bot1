@@ -350,7 +350,13 @@ export function createBot() {
       .text('⏭️ Next', 'next_post');
 
     if (post.mediaUrl && post.mediaType === 'photo') {
-      await ctx.replyWithPhoto(post.mediaUrl, { caption: text, parse_mode: 'HTML', reply_markup: kb });
+      try {
+        await ctx.replyWithPhoto(post.mediaUrl, { caption: text, parse_mode: 'HTML', reply_markup: kb });
+      } catch (photoError: any) {
+        console.error(`Failed to send photo for review: ${photoError.message}`);
+        const fallbackText = `${text}\n\n⚠️ <i>Failed to load photo: ${post.mediaUrl}</i>`;
+        await ctx.reply(fallbackText, { parse_mode: 'HTML', reply_markup: kb });
+      }
     } else {
       await ctx.reply(text, { parse_mode: 'HTML', reply_markup: kb });
     }
@@ -373,6 +379,7 @@ export function createBot() {
     };
 
     let msgId = 0;
+    let publishedCount = 0;
     for (const target of targets) {
       try {
         msgId = await telegramPublisher.publishPost(post, target, {
@@ -381,13 +388,18 @@ export function createBot() {
           going: analytics.going || 0,
           notGoing: analytics.notGoing || 0,
         });
+        publishedCount++;
       } catch (e: any) {
         await ctx.reply(`❌ Failed to publish to ${target}: ${e.message}`);
       }
     }
 
-    await postService.markPublished(postId, msgId);
-    await ctx.reply(`✅ Published to ${targets.length} channel(s)!`);
+    if (publishedCount > 0) {
+      await postService.markPublished(postId, msgId);
+      await ctx.reply(`✅ Published to ${publishedCount} channel(s)!`);
+    } else {
+      await ctx.reply(`⚠️ Post was not published to any channel due to errors.`);
+    }
   }
 
   // ── Helper: Update published post keyboard ────────────────────────────────
