@@ -9,6 +9,7 @@ import os
 import json
 import hashlib
 import aiohttp
+import tempfile
 from datetime import datetime, timezone
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
@@ -80,6 +81,32 @@ async def send_to_api(session: aiohttp.ClientSession, payload: dict) -> dict:
         print(f"[ERROR] Failed to send to API: {e}")
         return {}
 
+# ── Helper: upload image to ImageBB ───────────────────────────────────────────
+async def upload_to_imgbb(file_path: str) -> str | None:
+    api_key = os.environ.get("IMGBB_API_KEY") or os.environ.get("VITE_IMGBB_API_KEY")
+    if not api_key:
+        print("[ERROR] ImageBB API Key is missing.")
+        return None
+
+    url = f"https://api.imgbb.com/1/upload?key={api_key}"
+    try:
+        data = aiohttp.FormData()
+        data.add_field('image', open(file_path, 'rb'))
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data, timeout=30) as resp:
+                if resp.status == 200:
+                    res_json = await resp.json()
+                    direct_url = res_json.get("data", {}).get("url")
+                    return direct_url
+                else:
+                    err_text = await resp.text()
+                    print(f"[ERROR] ImageBB upload returned status {resp.status}: {err_text}")
+                    return None
+    except Exception as e:
+        print(f"[ERROR] ImageBB upload exception: {e}")
+        return None
+
 # ── Helper: get enabled channels from API ─────────────────────────────────────
 async def get_enabled_channels(session: aiohttp.ClientSession) -> list[str]:
     try:
@@ -95,13 +122,34 @@ async def get_media_url(message) -> str | None:
     if not message.media:
         return None
     try:
-        # For photos and documents, we return a reference that the bot can use
-        # In production, you'd upload to Firebase Storage and return the URL
-        # For now, return the Telegram file_id equivalent
         if isinstance(message.media, MessageMediaPhoto):
-            return f"https://t.me/{message.chat_id}/{message.id}"
+            # Create a temporary file path
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
+                temp_path = tmp.name
+            
+            try:
+                # Download media using the telethon client
+                downloaded_path = await client.download_media(message, file=temp_path)
+                if not downloaded_path:
+                    print("[ERROR] Telethon failed to download photo media.")
+                    return None
+                
+                # Upload to ImageBB
+                imgbb_url = await upload_to_imgbb(downloaded_path)
+                return imgbb_url
+            except Exception as download_error:
+                print(f"[ERROR] Failed during download/upload process: {download_error}")
+                return None
+            finally:
+                # Remove the temporary file
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception as remove_error:
+                        print(f"[WARN] Failed to delete temporary file {temp_path}: {remove_error}")
         return None
-    except Exception:
+    except Exception as e:
+        print(f"[ERROR] get_media_url exception: {e}")
         return None
 
 # ── Helper: extract poll data ─────────────────────────────────────────────────
