@@ -200,75 +200,138 @@ export function createBot() {
   // ── Callback Query Handler ───────────────────────────────────────────────────
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
-    await ctx.answerCallbackQuery();
 
-    // Channel toggle
+    // Channel toggle - quick operation
     if (data.startsWith('ch_toggle_')) {
       const [, , id, val] = data.split('_');
+      await ctx.answerCallbackQuery({
+        text: val === '1' ? '✅ Channel enabled' : '🔴 Channel disabled',
+        show_alert: false
+      });
       await channelService.toggle(id, val === '1');
       await ctx.editMessageText(`✅ Channel ${val === '1' ? 'enabled' : 'disabled'}.`);
       return;
     }
 
-    // Post approve
+    // Post approve - long operation
     if (data.startsWith('approve_')) {
       const postId = data.replace('approve_', '');
-      await ctx.editMessageText(`✅ Approving post...`);
-      await publishPostNow(ctx, postId);
+
+      // ✅ Respond immediately to prevent timeout
+      await ctx.answerCallbackQuery({
+        text: '⏳ Publishing post...',
+        show_alert: false
+      });
+
+      await ctx.editMessageText(`⏳ Publishing post ${postId}... Please wait.`);
+
+      try {
+        await publishPostNow(ctx, postId);
+      } catch (error: any) {
+        console.error(`Publish error: ${error.message}`);
+        await ctx.reply(`❌ Failed to publish: ${error.message}`);
+      }
       return;
     }
 
-    // Post reject
+    // Post reject - quick operation
     if (data.startsWith('reject_')) {
       const postId = data.replace('reject_', '');
+      await ctx.answerCallbackQuery({
+        text: '❌ Post rejected',
+        show_alert: false
+      });
       await postService.updateStatus(postId, 'rejected');
       await ctx.editMessageText(`❌ Post rejected.`);
       return;
     }
 
-    // Edit caption
+    // Edit caption - quick operation
     if (data.startsWith('edit_caption_')) {
       const postId = data.replace('edit_caption_', '');
+      await ctx.answerCallbackQuery({
+        text: '✏️ Send new caption',
+        show_alert: false
+      });
       await ctx.reply(`✏️ Send the new caption for post ${postId}:\n(Reply to this message)`);
-      // Store in session for next message handler
       return;
     }
 
-    // Add review
+    // Add review - quick operation
     if (data.startsWith('add_review_')) {
       const postId = data.replace('add_review_', '');
+      await ctx.answerCallbackQuery({
+        text: '💬 Send your review',
+        show_alert: false
+      });
       await ctx.reply(`💬 Send your personal review for post ${postId}:\n(Reply to this message)`);
       return;
     }
 
-    // AI Rewrite
+    // AI Rewrite - long operation
     if (data.startsWith('ai_rewrite_')) {
       const postId = data.replace('ai_rewrite_', '');
+
+      await ctx.answerCallbackQuery({
+        text: '🤖 AI is rewriting...',
+        show_alert: false
+      });
+
+      await ctx.editMessageText(`🤖 Rewriting post ${postId}... Please wait.`);
+
       const post = await postService.getById(postId);
-      if (!post) { await ctx.reply('Post not found.'); return; }
-      await ctx.reply('🤖 Rewriting...');
-      const rewritten = await aiService.rewrite(post.caption);
-      await postService.updateCaption(postId, rewritten);
-      await ctx.reply(`✅ Caption rewritten:\n\n${rewritten}\n\n/pending to continue reviewing.`);
+      if (!post) {
+        await ctx.reply('Post not found.');
+        return;
+      }
+
+      try {
+        const rewritten = await aiService.rewrite(post.caption);
+        await postService.updateCaption(postId, rewritten);
+        await ctx.editMessageText(`✅ Caption rewritten:\n\n${rewritten}\n\nUse /pending to continue reviewing.`);
+      } catch (error: any) {
+        await ctx.reply(`❌ AI rewrite failed: ${error.message}`);
+      }
       return;
     }
 
-    // AI Translate
+    // AI Translate - long operation
     if (data.startsWith('ai_translate_')) {
       const postId = data.replace('ai_translate_', '');
+
+      await ctx.answerCallbackQuery({
+        text: '🌐 Translating...',
+        show_alert: false
+      });
+
+      await ctx.editMessageText(`🌐 Translating post ${postId}... Please wait.`);
+
       const post = await postService.getById(postId);
-      if (!post) { await ctx.reply('Post not found.'); return; }
-      await ctx.reply('🌐 Translating to English...');
-      const translated = await aiService.translate(post.caption);
-      await postService.updateCaption(postId, translated);
-      await ctx.reply(`✅ Translated:\n\n${translated}\n\n/pending to continue reviewing.`);
+      if (!post) {
+        await ctx.reply('Post not found.');
+        return;
+      }
+
+      try {
+        const translated = await aiService.translate(post.caption);
+        await postService.updateCaption(postId, translated);
+        await ctx.editMessageText(`✅ Translated:\n\n${translated}\n\nUse /pending to continue reviewing.`);
+      } catch (error: any) {
+        await ctx.reply(`❌ Translation failed: ${error.message}`);
+      }
       return;
     }
 
-    // Schedule options
+    // Schedule - quick operation
     if (data.startsWith('schedule_')) {
       const [, delay, postId] = data.split('_');
       const delayMin = parseInt(delay);
+
+      await ctx.answerCallbackQuery({
+        text: `⏰ Scheduled in ${delayMin} minutes`,
+        show_alert: false
+      });
+
       const publishTime = new Date(Date.now() + delayMin * 60 * 1000);
       const targets = [process.env.MAIN_CHANNEL_ID || ''];
       await scheduleService.create(postId, publishTime, targets.filter(Boolean));
@@ -276,16 +339,27 @@ export function createBot() {
       return;
     }
 
-    // Delete post
+    // Delete - quick operation
     if (data.startsWith('delete_')) {
       const postId = data.replace('delete_', '');
+
+      await ctx.answerCallbackQuery({
+        text: '🗑️ Post deleted',
+        show_alert: false
+      });
+
       await postService.delete(postId);
       await ctx.editMessageText(`🗑️ Post deleted.`);
       return;
     }
 
-    // Next post in queue
+    // Next post - quick operation
     if (data === 'next_post') {
+      await ctx.answerCallbackQuery({
+        text: '⏭️ Loading next post...',
+        show_alert: false
+      });
+
       const posts = await postService.getPending();
       if (posts.length === 0) {
         await ctx.editMessageText('✅ No more pending posts!');
@@ -295,11 +369,16 @@ export function createBot() {
       return;
     }
 
-    // Interactive buttons from published posts (likes, favorites, attendance)
+    // Interactive buttons - quick operations
     if (data.startsWith('like_')) {
       const postId = data.replace('like_', '');
       const result = await interactionService.toggleLike(postId, ctx.from!.id);
-      await ctx.answerCallbackQuery(result.liked ? `👍 Liked! (${result.count})` : `Like removed.`);
+
+      await ctx.answerCallbackQuery({
+        text: result.liked ? `👍 Liked! (${result.count})` : 'Like removed.',
+        show_alert: false
+      });
+
       await updatePublishedPostKeyboard(postId);
       return;
     }
@@ -307,7 +386,13 @@ export function createBot() {
     if (data.startsWith('fav_')) {
       const postId = data.replace('fav_', '');
       const result = await interactionService.toggleFavorite(postId, ctx.from!.id);
-      await ctx.answerCallbackQuery(result.saved ? '❤️ Saved to favorites!' : 'Removed from favorites.');
+
+      await ctx.answerCallbackQuery({
+        text: result.saved ? '❤️ Saved to favorites!' : 'Removed from favorites.',
+        show_alert: false
+      });
+
+      await updatePublishedPostKeyboard(postId);
       return;
     }
 
@@ -315,8 +400,20 @@ export function createBot() {
       const parts = data.split('_');
       const status = parts[1] === 'going' ? 'going' : 'not_going';
       const postId = parts[2];
-      const result = await interactionService.setAttendance(postId, ctx.from!.id, ctx.from?.username, ctx.from?.first_name, status as 'going' | 'not_going');
-      await ctx.answerCallbackQuery(status === 'going' ? `✅ You're going! (${result.going})` : `❌ Not going. (${result.notGoing})`);
+
+      const result = await interactionService.setAttendance(
+        postId,
+        ctx.from!.id,
+        ctx.from?.username,
+        ctx.from?.first_name,
+        status as 'going' | 'not_going'
+      );
+
+      await ctx.answerCallbackQuery({
+        text: status === 'going' ? `✅ You're going! (${result.going})` : `❌ Not going. (${result.notGoing})`,
+        show_alert: false
+      });
+
       await updatePublishedPostKeyboard(postId);
       return;
     }
@@ -364,55 +461,196 @@ export function createBot() {
 
   // ── Helper: Publish post immediately ────────────────────────────────────────
   async function publishPostNow(ctx: Context, postId: string) {
-    const post = await postService.getById(postId);
-    if (!post) {
-      await ctx.reply('❌ Post not found.');
-      return;
-    }
-
-    const targets = post.publishTargets?.length
-      ? post.publishTargets
-      : [process.env.MAIN_CHANNEL_ID!].filter(Boolean);
-
-    const analytics = await interactionService.getAnalytics(postId) || {
-      likes: 0, favorites: 0, going: 0, notGoing: 0
-    };
-
-    let msgId = 0;
-    let publishedCount = 0;
-    for (const target of targets) {
-      try {
-        msgId = await telegramPublisher.publishPost(post, target, {
-          likes: analytics.likes || 0,
-          favorites: analytics.favorites || 0,
-          going: analytics.going || 0,
-          notGoing: analytics.notGoing || 0,
-        });
-        publishedCount++;
-      } catch (e: any) {
-        await ctx.reply(`❌ Failed to publish to ${target}: ${e.message}`);
+    try {
+      // Fetch post with retry logic
+      let post = await postService.getById(postId);
+      if (!post) {
+        await ctx.reply('❌ Post not found.');
+        return;
       }
-    }
 
-    if (publishedCount > 0) {
-      await postService.markPublished(postId, msgId);
-      await ctx.reply(`✅ Published to ${publishedCount} channel(s)!`);
-    } else {
-      await ctx.reply(`⚠️ Post was not published to any channel due to errors.`);
+      // Check if already published
+      if (post.status === 'published') {
+        await ctx.reply(`⚠️ Post ${postId} is already published.`);
+        return;
+      }
+
+      // Get publish targets
+      const targets = post.publishTargets?.length
+        ? post.publishTargets
+        : [process.env.MAIN_CHANNEL_ID!].filter(Boolean);
+
+      if (targets.length === 0) {
+        await ctx.reply('❌ No publish targets configured.');
+        return;
+      }
+
+      // Get analytics
+      const analytics = await interactionService.getAnalytics(postId) || {
+        likes: 0,
+        favorites: 0,
+        going: 0,
+        notGoing: 0
+      };
+
+      // Publish to each target
+      let publishedCount = 0;
+      let failedTargets: string[] = [];
+      let lastMessageId = 0;
+
+      // Send initial progress message
+      const progressMsg = await ctx.reply(
+        `📤 Publishing post to ${targets.length} channel(s)...\n` +
+        `Progress: 0/${targets.length}`
+      );
+
+      for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+        try {
+          // Add timeout to prevent hanging
+          const publishPromise = telegramPublisher.publishPost(post, target, {
+            likes: analytics.likes || 0,
+            favorites: analytics.favorites || 0,
+            going: analytics.going || 0,
+            notGoing: analytics.notGoing || 0,
+          });
+
+          const timeoutPromise = new Promise<number>((_, reject) => {
+            setTimeout(() => reject(new Error('Publish timeout after 30 seconds')), 30000);
+          });
+
+          const msgId = await Promise.race([publishPromise, timeoutPromise]);
+          lastMessageId = msgId;
+          publishedCount++;
+
+          // Update progress
+          await ctx.api.editMessageText(
+            ctx.chat!.id,
+            progressMsg.message_id,
+            `📤 Publishing post to ${targets.length} channel(s)...\n` +
+            `Progress: ${publishedCount}/${targets.length}\n` +
+            `✅ Published to: ${target}`
+          );
+
+        } catch (e: any) {
+          failedTargets.push(target);
+          console.error(`Failed to publish to ${target}:`, e.message);
+
+          // Update progress with error
+          await ctx.api.editMessageText(
+            ctx.chat!.id,
+            progressMsg.message_id,
+            `📤 Publishing post to ${targets.length} channel(s)...\n` +
+            `Progress: ${publishedCount}/${targets.length}\n` +
+            `❌ Failed: ${target} - ${e.message}`
+          );
+        }
+
+        // Small delay between publishes to avoid rate limiting
+        if (i < targets.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // Final result
+      if (publishedCount > 0) {
+        // Mark as published with the last successful message ID
+        await postService.markPublished(postId, lastMessageId);
+
+        // Send final success message
+        let resultText = `✅ Published to ${publishedCount}/${targets.length} channel(s)!`;
+        if (failedTargets.length > 0) {
+          resultText += `\n\n⚠️ Failed targets:\n${failedTargets.map(t => `• ${t}`).join('\n')}`;
+        }
+        await ctx.reply(resultText);
+
+        // Notify admin about successful publish
+        await telegramPublisher.notifyAdmin(
+          `📢 <b>Post Published</b>\n` +
+          `Post ID: ${postId}\n` +
+          `Targets: ${publishedCount}/${targets.length}\n` +
+          `Source: ${post.sourceChannel}`
+        );
+
+      } else {
+        // All targets failed
+        await ctx.reply(
+          `❌ Failed to publish to all ${targets.length} channel(s).\n\n` +
+          `Errors:\n${failedTargets.map(t => `• ${t}`).join('\n')}`
+        );
+      }
+
+    } catch (error: any) {
+      console.error('PublishPostNow error:', error);
+      await ctx.reply(`❌ Unexpected error during publish: ${error.message}`);
     }
   }
 
   // ── Helper: Update published post keyboard ────────────────────────────────
   async function updatePublishedPostKeyboard(postId: string) {
-    const post = await postService.getById(postId);
-    const analytics = await interactionService.getAnalytics(postId);
-    if (!post || !post.telegramMessageId || !analytics) return;
-
-    const kb = buildPostKeyboard(postId, analytics.likes, analytics.favorites, analytics.going, analytics.notGoing, post.isEvent);
-    const target = (post.publishTargets?.[0] || process.env.MAIN_CHANNEL_ID)!;
     try {
-      await telegramPublisher.editMessageReplyMarkup(target, post.telegramMessageId, kb);
-    } catch (_) {}
+      // Fetch post and analytics in parallel for better performance
+      const [post, analytics] = await Promise.all([
+        postService.getById(postId),
+        interactionService.getAnalytics(postId)
+      ]);
+
+      // Validate required data
+      if (!post || !post.telegramMessageId || !analytics) {
+        console.warn(`Cannot update keyboard for post ${postId}: missing required data`);
+        return;
+      }
+
+      // Build keyboard with current stats
+      const kb = buildPostKeyboard(
+        postId,
+        analytics.likes || 0,
+        analytics.favorites || 0,
+        analytics.going || 0,
+        analytics.notGoing || 0,
+        post.isEvent || false
+      );
+
+      // Get the target channel
+      const target = (post.publishTargets?.[0] || process.env.MAIN_CHANNEL_ID)!;
+      if (!target) {
+        console.warn(`Cannot update keyboard for post ${postId}: no target channel`);
+        return;
+      }
+
+      // Update the message with retry logic
+      let retries = 3;
+      let lastError: any = null;
+
+      while (retries > 0) {
+        try {
+          await telegramPublisher.editMessageReplyMarkup(target, post.telegramMessageId, kb);
+          return; // Success - exit function
+        } catch (error: any) {
+          lastError = error;
+          retries--;
+
+          // If it's a "message not found" error, don't retry
+          if (error.response?.data?.description?.includes('message to edit not found')) {
+            console.warn(`Message ${post.telegramMessageId} not found in channel ${target}`);
+            return;
+          }
+
+          // Wait before retry with exponential backoff
+          if (retries > 0) {
+            const delay = Math.pow(2, 3 - retries) * 1000;
+            console.log(`Retrying keyboard update for post ${postId} (${retries} retries left)...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
+      }
+
+      // If we get here, all retries failed
+      console.error(`Failed to update keyboard for post ${postId} after 3 attempts:`, lastError);
+
+    } catch (error: any) {
+      console.error(`updatePublishedPostKeyboard error for post ${postId}:`, error);
+    }
   }
 
   return bot;
