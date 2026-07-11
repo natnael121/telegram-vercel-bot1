@@ -273,6 +273,37 @@ export default function Dashboard() {
                   ))}
                 </div>
               </div>
+
+              {/* Bot Commands Reference */}
+              <div className="card" style={{ marginTop: '24px' }}>
+                <h3 style={{ fontWeight: 700, marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🤖 Bot Commands Reference
+                </h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                  Use these commands directly in your Telegram Admin Bot to manage content:
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                  {[
+                    { cmd: '/channels', desc: 'Manage source channels' },
+                    { cmd: '/pending', desc: 'Review pending posts' },
+                    { cmd: '/scheduled', desc: 'View scheduled posts' },
+                    { cmd: '/analytics', desc: 'Dashboard stats' },
+                    { cmd: '/search', desc: 'Search posts' },
+                    { cmd: '/publish', desc: 'Manual publish' },
+                    { cmd: '/settings', desc: 'Bot settings' },
+                    { cmd: '/help', desc: 'Help function' },
+                  ].map((command, idx) => (
+                    <div key={idx} style={{ padding: '12px 16px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <code style={{ fontSize: '13px', color: 'var(--accent-blue)', fontWeight: 700, background: 'rgba(59, 130, 246, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>
+                        {command.cmd}
+                      </code>
+                      <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                        {command.desc}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 

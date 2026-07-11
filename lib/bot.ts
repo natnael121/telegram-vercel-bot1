@@ -9,6 +9,26 @@ import { telegramPublisher, buildPostKeyboard } from '../lib/publisher';
 export function createBot() {
   const bot = new Bot(process.env.BOT_TOKEN!);
 
+  // ── Safely wrap answerCallbackQuery to prevent crashes on query timeout ────────
+  bot.use(async (ctx, next) => {
+    if (ctx.answerCallbackQuery) {
+      const originalAnswer = ctx.answerCallbackQuery.bind(ctx);
+      ctx.answerCallbackQuery = async (options?: any) => {
+        try {
+          return await originalAnswer(options);
+        } catch (error: any) {
+          console.warn(`Failed to answer callback query: ${error.message}`);
+          return true;
+        }
+      };
+    }
+    await next();
+  });
+
+  bot.catch((err) => {
+    console.error(`Unhandled error in bot:`, err.error);
+  });
+
   // ── Admin guard ──────────────────────────────────────────────────────────────
   const adminId = Number(process.env.ADMIN_CHAT_ID);
   bot.use(async (ctx, next) => {
