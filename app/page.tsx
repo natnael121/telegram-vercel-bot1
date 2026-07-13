@@ -18,7 +18,12 @@ interface TopPost {
   going: number;
   notGoing: number;
   favorites: number;
+  sourceChannel?: string;
+  createdAt?: { _seconds: number } | null;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
 }
+
 
 interface Channel {
   id: string;
@@ -259,12 +264,27 @@ export default function Dashboard() {
                     </div>
                   ) : topPosts.map((p, i) => (
                     <div key={p.postId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderBottom: i < topPosts.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-muted)', width: '24px' }}>#{i + 1}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.postId.slice(0, 12)}...</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          👍 {p.likes} &nbsp; 👁️ {p.views} &nbsp; ❤️ {p.favorites}
+                      <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>#{i + 1}</span>
+                      
+                      <div style={{ width: '40px', height: '40px', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)', flexShrink: 0 }}>
+                        {p.mediaUrl && p.mediaType === 'photo' ? (
+                          <img src={p.mediaUrl} alt="post thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <span style={{ fontSize: '18px' }}>{{ photo: '🖼️', video: '🎬', gif: '🎞️', document: '📄', voice: '🎙️', album: '🖼️', poll: '📊', text: '📝' }[p.mediaType || ''] || '📝'}</span>
+                        )}
+                      </div>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.sourceChannel || 'Unknown Channel'}
                         </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {p.createdAt?._seconds ? new Date(p.createdAt._seconds * 1000).toLocaleDateString() : '—'}
+                        </div>
+                      </div>
+                      
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        👍 {p.likes} &nbsp; 👁️ {p.views}
                       </div>
                     </div>
                   ))}
@@ -296,34 +316,6 @@ export default function Dashboard() {
                       View all {channels.length} channels →
                     </button>
                   )}
-                </div>
-              </div>
-
-              {/* Workflow Guide */}
-              <div className="card" style={{ marginTop: '24px' }}>
-                <h3 style={{ fontWeight: 700, marginBottom: '20px', fontSize: '16px' }}>🚀 System Workflow</h3>
-                <div style={{ display: 'flex', gap: '0', overflowX: 'auto', padding: '4px 0' }}>
-                  {[
-                    { icon: '📡', label: 'Collector', desc: 'Python script reads public channels', color: 'var(--accent-blue)' },
-                    { icon: '→', label: '', desc: '', color: 'transparent' },
-                    { icon: '🗄️', label: 'Firestore', desc: 'Posts stored with status: pending', color: 'var(--accent-violet)' },
-                    { icon: '→', label: '', desc: '', color: 'transparent' },
-                    { icon: '🌐', label: 'Dashboard', desc: 'Review, edit, approve via web', color: 'var(--accent-cyan)' },
-                    { icon: '→', label: '', desc: '', color: 'transparent' },
-                    { icon: '📢', label: 'Publish', desc: 'Goes to your Telegram channels', color: 'var(--accent-green)' },
-                    { icon: '→', label: '', desc: '', color: 'transparent' },
-                    { icon: '📊', label: 'Analytics', desc: 'Real-time likes, views, attendance', color: 'var(--accent-amber)' },
-                  ].map((step, i) => (
-                    step.label === '' ? (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '0 8px', color: 'var(--text-muted)', fontSize: '20px' }}>→</div>
-                    ) : (
-                      <div key={i} style={{ flex: '0 0 auto', textAlign: 'center', padding: '16px 20px', borderRadius: '12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', minWidth: '130px' }}>
-                        <div style={{ fontSize: '28px', marginBottom: '8px' }}>{step.icon}</div>
-                        <div style={{ fontWeight: 700, fontSize: '13px', color: step.color }}>{step.label}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>{step.desc}</div>
-                      </div>
-                    )
-                  ))}
                 </div>
               </div>
             </div>
@@ -1020,19 +1012,27 @@ function AnalyticsTab({ stats, topPosts }: { stats: Stats | null; topPosts: TopP
             </div>
           ) : topPosts.map((p, i) => (
             <div key={p.postId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderBottom: i < topPosts.length - 1 ? '1px solid var(--border)' : 'none' }}>
-              <div style={{
-                width: '32px', height: '32px', borderRadius: '8px',
-                background: i === 0 ? 'var(--gradient-amber)' : 'var(--gradient-blue)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 800, fontSize: '14px',
-              }}>
-                #{i + 1}
+              <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-muted)', width: '20px', textAlign: 'center' }}>#{i + 1}</span>
+              
+              <div style={{ width: '40px', height: '40px', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)', flexShrink: 0 }}>
+                {p.mediaUrl && p.mediaType === 'photo' ? (
+                  <img src={p.mediaUrl} alt="post thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <span style={{ fontSize: '18px' }}>{{ photo: '🖼️', video: '🎬', gif: '🎞️', document: '📄', voice: '🎙️', album: '🖼️', poll: '📊', text: '📝' }[p.mediaType || ''] || '📝'}</span>
+                )}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '13px', fontWeight: 600 }}>Post {p.postId.slice(0, 10)}...</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  👍 {p.likes} &nbsp; 👁️ {p.views} &nbsp; ❤️ {p.favorites} &nbsp; ✅ {p.going}
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.sourceChannel || 'Unknown Channel'}
                 </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {p.createdAt?._seconds ? new Date(p.createdAt._seconds * 1000).toLocaleDateString() : '—'}
+                </div>
+              </div>
+              
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                👍 {p.likes} &nbsp; 👁️ {p.views}
               </div>
             </div>
           ))}
