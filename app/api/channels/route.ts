@@ -25,6 +25,20 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PATCH(req: NextRequest) {
+  try {
+    const { id, enabled } = await req.json();
+    if (!id || typeof enabled !== 'boolean') {
+      return NextResponse.json({ error: 'Missing id or enabled' }, { status: 400 });
+    }
+    const { channelService } = await import('@/lib/db');
+    await channelService.toggle(id, enabled);
+    return NextResponse.json({ status: 'toggled', enabled });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get('id');

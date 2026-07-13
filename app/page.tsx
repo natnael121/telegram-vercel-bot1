@@ -1,6 +1,7 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
+// ─── Types ─────────────────────────────────────────────────
 interface Stats {
   totalPosts: number;
   pendingPosts: number;
@@ -28,18 +29,55 @@ interface Channel {
   postCount?: number;
 }
 
+interface Post {
+  id: string;
+  sourceChannel: string;
+  caption: string;
+  originalCaption?: string;
+  review?: string;
+  mediaUrl?: string;
+  mediaType: string;
+  mediaUrls?: string[];
+  status: string;
+  category: string;
+  publishTargets?: string[];
+  isEvent?: boolean;
+  createdAt?: { _seconds: number };
+}
+
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+  leaving?: boolean;
+}
+
+// ─── Toast System ──────────────────────────────────────────
+function useToasts() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const addToast = useCallback((message: string, type: Toast['type'] = 'info') => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.map(t => t.id === id ? { ...t, leaving: true } : t));
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 300);
+    }, 4000);
+  }, []);
+  return { toasts, addToast };
+}
+
+// ─── Main Dashboard ────────────────────────────────────────
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [topPosts, setTopPosts] = useState<TopPost[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [activeTab, setActiveTab] = useState<'overview' | 'channels' | 'posts' | 'analytics'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'channels' | 'posts' | 'scheduled' | 'analytics'>('overview');
   const [loading, setLoading] = useState(true);
   const [addChannelForm, setAddChannelForm] = useState({ username: '', category: 'General' });
   const [addingChannel, setAddingChannel] = useState(false);
+  const { toasts, addToast } = useToasts();
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   async function fetchData() {
     try {
@@ -69,7 +107,10 @@ export default function Dashboard() {
         body: JSON.stringify(addChannelForm),
       });
       setAddChannelForm({ username: '', category: 'General' });
+      addToast('✅ Channel added successfully', 'success');
       await fetchData();
+    } catch {
+      addToast('❌ Failed to add channel', 'error');
     } finally {
       setAddingChannel(false);
     }
@@ -78,13 +119,37 @@ export default function Dashboard() {
   async function removeChannel(id: string) {
     if (!confirm('Remove this channel?')) return;
     await fetch(`/api/channels?id=${id}`, { method: 'DELETE' });
+    addToast('🗑️ Channel removed', 'success');
     await fetchData();
+  }
+
+  async function toggleChannel(id: string, enabled: boolean) {
+    try {
+      await fetch('/api/channels', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, enabled }),
+      });
+      setChannels(prev => prev.map(ch => ch.id === id ? { ...ch, enabled } : ch));
+      addToast(enabled ? '🟢 Channel enabled' : '🔴 Channel disabled', 'success');
+    } catch {
+      addToast('❌ Failed to toggle channel', 'error');
+    }
   }
 
   const categories = ['General', 'Technology', 'Sports', 'Crypto', 'News', 'Business', 'Entertainment', 'Health', 'Ethiopia'];
 
   return (
     <div className="layout">
+      {/* Toast Container */}
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast toast-${t.type} ${t.leaving ? 'leaving' : ''}`}>
+            {t.message}
+          </div>
+        ))}
+      </div>
+
       {/* ── Sidebar ─────────────────────────────────────────── */}
       <aside className="sidebar">
         <div className="nav-logo">
@@ -103,6 +168,7 @@ export default function Dashboard() {
             { key: 'overview', icon: '📊', label: 'Overview' },
             { key: 'channels', icon: '📡', label: 'Channels', badge: channels.length },
             { key: 'posts', icon: '📝', label: 'Posts', badge: stats?.pendingPosts || 0, badgeClass: 'orange' },
+            { key: 'scheduled', icon: '⏰', label: 'Scheduled' },
             { key: 'analytics', icon: '📈', label: 'Analytics' },
           ].map(item => (
             <button
@@ -117,20 +183,6 @@ export default function Dashboard() {
                 <span className={`nav-badge ${item.badgeClass || ''}`}>{item.badge}</span>
               )}
             </button>
-          ))}
-
-          <div className="nav-section" style={{ marginTop: 16 }}>
-            <span className="nav-section-label">Quick Links</span>
-          </div>
-          {[
-            { icon: '🤖', label: 'Setup Webhook', href: '#' },
-            { icon: '📖', label: 'Collector Docs', href: '#collector' },
-            { icon: '🔧', label: 'Settings', href: '#settings' },
-          ].map(item => (
-            <a key={item.label} href={item.href} className="nav-item">
-              <span className="nav-icon">{item.icon}</span>
-              {item.label}
-            </a>
           ))}
         </nav>
 
@@ -150,6 +202,7 @@ export default function Dashboard() {
               {activeTab === 'overview' && '📊 Overview'}
               {activeTab === 'channels' && '📡 Source Channels'}
               {activeTab === 'posts' && '📝 Post Management'}
+              {activeTab === 'scheduled' && '⏰ Scheduled Posts'}
               {activeTab === 'analytics' && '📈 Analytics'}
             </h1>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -255,7 +308,7 @@ export default function Dashboard() {
                     { icon: '→', label: '', desc: '', color: 'transparent' },
                     { icon: '🗄️', label: 'Firestore', desc: 'Posts stored with status: pending', color: 'var(--accent-violet)' },
                     { icon: '→', label: '', desc: '', color: 'transparent' },
-                    { icon: '🤖', label: 'Admin Bot', desc: 'Review, edit, approve via Telegram', color: 'var(--accent-cyan)' },
+                    { icon: '🌐', label: 'Dashboard', desc: 'Review, edit, approve via web', color: 'var(--accent-cyan)' },
                     { icon: '→', label: '', desc: '', color: 'transparent' },
                     { icon: '📢', label: 'Publish', desc: 'Goes to your Telegram channels', color: 'var(--accent-green)' },
                     { icon: '→', label: '', desc: '', color: 'transparent' },
@@ -270,37 +323,6 @@ export default function Dashboard() {
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.4 }}>{step.desc}</div>
                       </div>
                     )
-                  ))}
-                </div>
-              </div>
-
-              {/* Bot Commands Reference */}
-              <div className="card" style={{ marginTop: '24px' }}>
-                <h3 style={{ fontWeight: 700, marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  🤖 Bot Commands Reference
-                </h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                  Use these commands directly in your Telegram Admin Bot to manage content:
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-                  {[
-                    { cmd: '/channels', desc: 'Manage source channels' },
-                    { cmd: '/pending', desc: 'Review pending posts' },
-                    { cmd: '/scheduled', desc: 'View scheduled posts' },
-                    { cmd: '/analytics', desc: 'Dashboard stats' },
-                    { cmd: '/search', desc: 'Search posts' },
-                    { cmd: '/publish', desc: 'Manual publish' },
-                    { cmd: '/settings', desc: 'Bot settings' },
-                    { cmd: '/help', desc: 'Help function' },
-                  ].map((command, idx) => (
-                    <div key={idx} style={{ padding: '12px 16px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <code style={{ fontSize: '13px', color: 'var(--accent-blue)', fontWeight: 700, background: 'rgba(59, 130, 246, 0.1)', padding: '4px 8px', borderRadius: '6px' }}>
-                        {command.cmd}
-                      </code>
-                      <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        {command.desc}
-                      </span>
-                    </div>
                   ))}
                 </div>
               </div>
@@ -344,6 +366,7 @@ export default function Dashboard() {
                       <th>Category</th>
                       <th>Posts</th>
                       <th>Status</th>
+                      <th>Toggle</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -362,6 +385,16 @@ export default function Dashboard() {
                           </span>
                         </td>
                         <td>
+                          <label className="toggle">
+                            <input
+                              type="checkbox"
+                              checked={ch.enabled}
+                              onChange={() => toggleChannel(ch.id, !ch.enabled)}
+                            />
+                            <span className="toggle-slider"></span>
+                          </label>
+                        </td>
+                        <td>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <button className="btn btn-ghost btn-sm" onClick={() => removeChannel(ch.id)}>
                               🗑️ Remove
@@ -372,7 +405,7 @@ export default function Dashboard() {
                     ))}
                     {channels.length === 0 && (
                       <tr>
-                        <td colSpan={5}>
+                        <td colSpan={6}>
                           <div className="empty-state">
                             <div className="empty-state-icon">📡</div>
                             <h3>No channels added</h3>
@@ -389,7 +422,12 @@ export default function Dashboard() {
 
           {/* ── Posts Tab ─────────────────────────────────────── */}
           {activeTab === 'posts' && (
-            <PostsTab />
+            <PostsTab addToast={addToast} onDataChange={fetchData} />
+          )}
+
+          {/* ── Scheduled Tab ────────────────────────────────── */}
+          {activeTab === 'scheduled' && (
+            <ScheduledTab addToast={addToast} />
           )}
 
           {/* ── Analytics Tab ─────────────────────────────────── */}
@@ -402,11 +440,18 @@ export default function Dashboard() {
   );
 }
 
-/* ── Posts Tab Component ────────────────────────────────────── */
-function PostsTab() {
-  const [posts, setPosts] = useState<any[]>([]);
+
+/* ══════════════════════════════════════════════════════════════
+   Posts Tab — Full Admin Bot Functionality
+   ══════════════════════════════════════════════════════════════ */
+function PostsTab({ addToast, onDataChange }: { addToast: (msg: string, type: Toast['type']) => void; onDataChange: () => void }) {
+  const [posts, setPosts] = useState<Post[]>([]);
   const [filters, setFilters] = useState({ status: '', category: '', q: '' });
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<Record<string, string>>({});
+  const [expandedPost, setExpandedPost] = useState<string | null>(null);
+  const [modal, setModal] = useState<{ type: 'edit_caption' | 'add_review'; postId: string; value: string } | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
 
   useEffect(() => { fetchPosts(); }, []);
 
@@ -425,11 +470,94 @@ function PostsTab() {
     }
   }
 
-  async function deletePost(id: string) {
-    if (!confirm('Delete this post?')) return;
-    await fetch(`/api/posts?id=${id}`, { method: 'DELETE' });
-    await fetchPosts();
+  // ── Generic Post Action ──────────────────────────────────
+  async function postAction(postId: string, action: string, extra: Record<string, any> = {}) {
+    setActionLoading(prev => ({ ...prev, [postId]: action }));
+    try {
+      const res = await fetch('/api/posts/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, action, ...extra }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Action failed');
+
+      // Update local state
+      switch (action) {
+        case 'approve':
+          if (data.status === 'published') {
+            addToast(`✅ Published to ${data.publishedCount}/${data.totalTargets} channel(s)!`, 'success');
+            setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: 'published' } : p));
+          } else {
+            addToast(`❌ Failed to publish: ${data.failedTargets?.join(', ')}`, 'error');
+          }
+          break;
+        case 'reject':
+          addToast('❌ Post rejected', 'success');
+          setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: 'rejected' } : p));
+          break;
+        case 'edit_caption':
+          addToast('✏️ Caption updated', 'success');
+          setPosts(prev => prev.map(p => p.id === postId ? { ...p, caption: data.caption } : p));
+          break;
+        case 'add_review':
+          addToast('💬 Review added', 'success');
+          setPosts(prev => prev.map(p => p.id === postId ? { ...p, review: data.review } : p));
+          break;
+        case 'ai_rewrite':
+          addToast('🤖 Caption rewritten by AI', 'success');
+          setPosts(prev => prev.map(p => p.id === postId ? { ...p, caption: data.caption } : p));
+          break;
+        case 'ai_translate':
+          addToast('🌐 Caption translated', 'success');
+          setPosts(prev => prev.map(p => p.id === postId ? { ...p, caption: data.caption } : p));
+          break;
+        case 'schedule':
+          addToast(`⏰ Scheduled in ${extra.delay} minutes`, 'success');
+          setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: 'scheduled' } : p));
+          break;
+      }
+      onDataChange();
+    } catch (err: any) {
+      addToast(`❌ ${err.message}`, 'error');
+    } finally {
+      setActionLoading(prev => {
+        const next = { ...prev };
+        delete next[postId];
+        return next;
+      });
+    }
   }
+
+  async function deletePost(id: string) {
+    if (!confirm('Delete this post permanently?')) return;
+    setActionLoading(prev => ({ ...prev, [id]: 'delete' }));
+    try {
+      await fetch(`/api/posts?id=${id}`, { method: 'DELETE' });
+      addToast('🗑️ Post deleted', 'success');
+      setPosts(prev => prev.filter(p => p.id !== id));
+      onDataChange();
+    } catch {
+      addToast('❌ Failed to delete', 'error');
+    } finally {
+      setActionLoading(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  }
+
+  function handleModalSave() {
+    if (!modal) return;
+    postAction(modal.postId, modal.type, modal.type === 'edit_caption' ? { caption: modal.value } : { review: modal.value });
+    setModal(null);
+  }
+
+  const isLoading = (postId: string, action?: string) => {
+    if (!action) return !!actionLoading[postId];
+    return actionLoading[postId] === action;
+  };
 
   const statusColors: Record<string, string> = {
     pending: 'badge-pending',
@@ -439,8 +567,91 @@ function PostsTab() {
     scheduled: 'badge-scheduled',
   };
 
+  const mediaIcons: Record<string, string> = {
+    photo: '🖼️', video: '🎬', gif: '🎞️', document: '📄', voice: '🎙️', album: '🖼️🖼️', poll: '📊', text: '📝',
+  };
+
+  const pendingPosts = posts.filter(p => p.status === 'pending');
+  const otherPosts = posts.filter(p => p.status !== 'pending');
+
+  // ── Action Buttons (reused in cards and expanded rows) ──
+  function ActionButtons({ post }: { post: Post }) {
+    const pid = post.id;
+    return (
+      <div className="review-card-actions">
+        {/* Primary Actions */}
+        {post.status !== 'published' && (
+          <button className="btn btn-approve" disabled={isLoading(pid)} onClick={() => postAction(pid, 'approve')}>
+            {isLoading(pid, 'approve') ? <><span className="spinner" /> Publishing...</> : '✅ Approve & Publish'}
+          </button>
+        )}
+        {post.status !== 'rejected' && post.status !== 'published' && (
+          <button className="btn btn-reject" disabled={isLoading(pid)} onClick={() => postAction(pid, 'reject')}>
+            {isLoading(pid, 'reject') ? <><span className="spinner" /></> : '❌ Reject'}
+          </button>
+        )}
+
+        {/* Edit Actions */}
+        <button className="btn btn-edit" disabled={isLoading(pid)} onClick={() => setModal({ type: 'edit_caption', postId: pid, value: post.caption || '' })}>
+          ✏️ Edit Caption
+        </button>
+        <button className="btn btn-edit" disabled={isLoading(pid)} onClick={() => setModal({ type: 'add_review', postId: pid, value: post.review || '' })}>
+          💬 Add Review
+        </button>
+
+        {/* AI Actions */}
+        <button className="btn btn-ai" disabled={isLoading(pid)} onClick={() => postAction(pid, 'ai_rewrite')}>
+          {isLoading(pid, 'ai_rewrite') ? <><span className="spinner" /> Rewriting...</> : '🤖 AI Rewrite'}
+        </button>
+        <button className="btn btn-ai" disabled={isLoading(pid)} onClick={() => postAction(pid, 'ai_translate')}>
+          {isLoading(pid, 'ai_translate') ? <><span className="spinner" /> Translating...</> : '🌐 AI Translate'}
+        </button>
+
+        {/* Schedule */}
+        {post.status !== 'published' && post.status !== 'scheduled' && (
+          <div className="schedule-group">
+            <button className="btn btn-schedule" disabled={isLoading(pid)} onClick={() => postAction(pid, 'schedule', { delay: '30' })}>⏰ 30m</button>
+            <button className="btn btn-schedule" disabled={isLoading(pid)} onClick={() => postAction(pid, 'schedule', { delay: '60' })}>⏰ 1hr</button>
+            <button className="btn btn-schedule" disabled={isLoading(pid)} onClick={() => postAction(pid, 'schedule', { delay: '1440' })}>⏰ Tomorrow</button>
+          </div>
+        )}
+
+        {/* Delete */}
+        <button className="btn btn-danger btn-sm" disabled={isLoading(pid)} onClick={() => deletePost(pid)}>
+          {isLoading(pid, 'delete') ? <><span className="spinner" /></> : '🗑️ Delete'}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-in">
+      {/* Modal */}
+      {modal && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{modal.type === 'edit_caption' ? '✏️ Edit Caption' : '💬 Add Review'}</h3>
+              <button className="modal-close" onClick={() => setModal(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <textarea
+                value={modal.value}
+                onChange={e => setModal(prev => prev ? { ...prev, value: e.target.value } : null)}
+                placeholder={modal.type === 'edit_caption' ? 'Enter new caption...' : 'Enter your review...'}
+                autoFocus
+              />
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleModalSave}>
+                {modal.type === 'edit_caption' ? '✏️ Save Caption' : '💬 Save Review'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="card" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -465,65 +676,309 @@ function PostsTab() {
           <button className="btn btn-primary" onClick={fetchPosts} disabled={loading}>
             {loading ? '⏳' : '🔍 Search'}
           </button>
+          <div style={{ display: 'flex', gap: '4px', borderRadius: '10px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+            <button
+              className={`btn btn-sm ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ borderRadius: 0, border: 'none' }}
+              onClick={() => setViewMode('cards')}
+            >📋 Cards</button>
+            <button
+              className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ borderRadius: 0, border: 'none' }}
+              onClick={() => setViewMode('table')}
+            >📊 Table</button>
+          </div>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Post</th>
-              <th>Source</th>
-              <th>Category</th>
-              <th>Media</th>
-              <th>Status</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {posts.map(p => (
-              <tr key={p.id}>
-                <td style={{ maxWidth: '280px' }}>
-                  <div style={{ fontWeight: 500, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.caption?.slice(0, 80) || '(no caption)'}
+      {/* ── Card View ────────────────────────────────────────── */}
+      {viewMode === 'cards' && (
+        <div>
+          {/* Pending Posts Section */}
+          {pendingPosts.length > 0 && (
+            <div style={{ marginBottom: '32px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <h3 style={{ fontWeight: 700, fontSize: '16px' }}>📬 Pending Review</h3>
+                <span className="review-counter">⏳ {pendingPosts.length} post(s)</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {pendingPosts.map((post, i) => (
+                  <div key={post.id} className="review-card" style={{ animationDelay: `${i * 0.08}s` }}>
+                    <div className="review-card-header">
+                      <span style={{ fontSize: '20px' }}>{mediaIcons[post.mediaType] || '📝'}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: '14px' }}>Post from {post.sourceChannel}</div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          {post.createdAt?._seconds ? new Date(post.createdAt._seconds * 1000).toLocaleString() : '—'}
+                        </div>
+                      </div>
+                      <span className="badge badge-pending">Pending</span>
+                    </div>
+
+                    <div className="review-card-meta">
+                      <div className="review-card-meta-item">📡 <strong>{post.sourceChannel}</strong></div>
+                      <div className="review-card-meta-item">📂 <strong>{post.category}</strong></div>
+                      <div className="review-card-meta-item">🎬 <strong>{post.mediaType}</strong></div>
+                      <div className="review-card-meta-item">🔖 ID: <strong>{post.id.slice(0, 10)}...</strong></div>
+                    </div>
+
+                    <div className="review-card-body">
+                      {post.mediaUrl && post.mediaType === 'photo' && (
+                        <img src={post.mediaUrl} alt="Post media" className="review-card-media" loading="lazy" />
+                      )}
+                      <div className="review-card-caption">
+                        {post.caption || '(no caption)'}
+                      </div>
+                      {post.review && (
+                        <div className="review-card-review">
+                          💬 <strong>Review:</strong> {post.review}
+                        </div>
+                      )}
+                    </div>
+
+                    <ActionButtons post={post} />
                   </div>
-                  {p.review && <div style={{ fontSize: '11px', color: 'var(--accent-cyan)', marginTop: '2px' }}>💬 Has review</div>}
-                </td>
-                <td style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{p.sourceChannel}</td>
-                <td><span className="tag">{p.category}</span></td>
-                <td style={{ fontSize: '20px' }}>
-                  {{ photo: '🖼️', video: '🎬', gif: '🎞️', document: '📄', voice: '🎙️', album: '🖼️🖼️', poll: '📊', text: '📝' }[p.mediaType as string] || '📝'}
-                </td>
-                <td><span className={`badge ${statusColors[p.status] || ''}`}>{p.status}</span></td>
-                <td style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                  {p.createdAt?._seconds ? new Date(p.createdAt._seconds * 1000).toLocaleDateString() : '—'}
-                </td>
-                <td>
-                  <button className="btn btn-danger btn-sm" onClick={() => deletePost(p.id)}>🗑️</button>
-                </td>
-              </tr>
-            ))}
-            {posts.length === 0 && !loading && (
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Other Posts */}
+          {otherPosts.length > 0 && (
+            <div>
+              <h3 style={{ fontWeight: 700, fontSize: '16px', marginBottom: '16px' }}>
+                📋 All Posts {filters.status && `— ${filters.status}`}
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {otherPosts.map(post => (
+                  <div key={post.id} className="review-card">
+                    <div
+                      className="review-card-header"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setExpandedPost(expandedPost === post.id ? null : post.id)}
+                    >
+                      <span style={{ fontSize: '18px' }}>{mediaIcons[post.mediaType] || '📝'}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '500px' }}>
+                          {post.caption?.slice(0, 100) || '(no caption)'}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {post.sourceChannel} · {post.category} · {post.createdAt?._seconds ? new Date(post.createdAt._seconds * 1000).toLocaleDateString() : '—'}
+                        </div>
+                      </div>
+                      <span className={`badge ${statusColors[post.status] || ''}`}>{post.status}</span>
+                      <span style={{ fontSize: '16px', color: 'var(--text-muted)', transition: 'transform 0.2s', transform: expandedPost === post.id ? 'rotate(180deg)' : 'rotate(0)' }}>▼</span>
+                    </div>
+
+                    {expandedPost === post.id && (
+                      <>
+                        <div className="review-card-body">
+                          {post.mediaUrl && post.mediaType === 'photo' && (
+                            <img src={post.mediaUrl} alt="Post media" className="review-card-media" loading="lazy" />
+                          )}
+                          <div className="review-card-caption">
+                            {post.caption || '(no caption)'}
+                          </div>
+                          {post.review && (
+                            <div className="review-card-review">
+                              💬 <strong>Review:</strong> {post.review}
+                            </div>
+                          )}
+                        </div>
+                        <ActionButtons post={post} />
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {posts.length === 0 && !loading && (
+            <div className="empty-state">
+              <div className="empty-state-icon">📭</div>
+              <h3>No posts found</h3>
+              <p>Try adjusting your filters or wait for the collector to bring new posts</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Table View ───────────────────────────────────────── */}
+      {viewMode === 'table' && (
+        <div className="table-wrapper">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={7}>
-                  <div className="empty-state">
-                    <div className="empty-state-icon">📭</div>
-                    <h3>No posts found</h3>
-                    <p>Try adjusting your filters</p>
-                  </div>
-                </td>
+                <th>Post</th>
+                <th>Source</th>
+                <th>Category</th>
+                <th>Media</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {posts.map(p => (
+                <>
+                  <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => setExpandedPost(expandedPost === p.id ? null : p.id)}>
+                    <td style={{ maxWidth: '280px' }}>
+                      <div style={{ fontWeight: 500, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.caption?.slice(0, 80) || '(no caption)'}
+                      </div>
+                      {p.review && <div style={{ fontSize: '11px', color: 'var(--accent-cyan)', marginTop: '2px' }}>💬 Has review</div>}
+                    </td>
+                    <td style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{p.sourceChannel}</td>
+                    <td><span className="tag">{p.category}</span></td>
+                    <td style={{ fontSize: '20px' }}>{mediaIcons[p.mediaType] || '📝'}</td>
+                    <td><span className={`badge ${statusColors[p.status] || ''}`}>{p.status}</span></td>
+                    <td style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {p.createdAt?._seconds ? new Date(p.createdAt._seconds * 1000).toLocaleDateString() : '—'}
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>{expandedPost === p.id ? '▲' : '▼'}</span>
+                    </td>
+                  </tr>
+                  {expandedPost === p.id && (
+                    <tr key={`${p.id}-detail`} className="post-detail-row">
+                      <td colSpan={7}>
+                        <div className="post-detail-content">
+                          {p.mediaUrl && p.mediaType === 'photo' && (
+                            <img src={p.mediaUrl} alt="Post media" className="review-card-media" style={{ maxWidth: '400px' }} loading="lazy" />
+                          )}
+                          <div className="review-card-caption" style={{ marginBottom: '12px' }}>
+                            {p.caption || '(no caption)'}
+                          </div>
+                          {p.review && (
+                            <div className="review-card-review" style={{ marginBottom: '12px' }}>
+                              💬 <strong>Review:</strong> {p.review}
+                            </div>
+                          )}
+                          <ActionButtons post={p} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+              {posts.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state">
+                      <div className="empty-state-icon">📭</div>
+                      <h3>No posts found</h3>
+                      <p>Try adjusting your filters</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ── Analytics Tab Component ──────────────────────────────────── */
+
+/* ══════════════════════════════════════════════════════════════
+   Scheduled Tab — View Scheduled Posts
+   ══════════════════════════════════════════════════════════════ */
+function ScheduledTab({ addToast }: { addToast: (msg: string, type: Toast['type']) => void }) {
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { fetchScheduled(); }, []);
+
+  async function fetchScheduled() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/posts?status=scheduled');
+      const data = await res.json();
+      setPosts(data.posts || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deletePost(id: string) {
+    if (!confirm('Delete this scheduled post?')) return;
+    try {
+      await fetch(`/api/posts?id=${id}`, { method: 'DELETE' });
+      addToast('🗑️ Scheduled post deleted', 'success');
+      setPosts(prev => prev.filter(p => p.id !== id));
+    } catch {
+      addToast('❌ Failed to delete', 'error');
+    }
+  }
+
+  const mediaIcons: Record<string, string> = {
+    photo: '🖼️', video: '🎬', gif: '🎞️', document: '📄', voice: '🎙️', album: '🖼️🖼️', poll: '📊', text: '📝',
+  };
+
+  if (loading) {
+    return (
+      <div className="animate-in">
+        <div className="card">
+          <div style={{ textAlign: 'center', padding: '40px' }}>
+            <span className="spinner" style={{ width: 24, height: 24, borderWidth: 3 }} />
+            <p style={{ color: 'var(--text-muted)', marginTop: '12px' }}>Loading scheduled posts...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-in">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+        <h3 style={{ fontWeight: 700, fontSize: '16px' }}>⏰ Scheduled Posts</h3>
+        <span className="review-counter" style={{ background: 'rgba(139, 92, 246, 0.1)', borderColor: 'rgba(139, 92, 246, 0.3)', color: 'var(--accent-violet)' }}>
+          📅 {posts.length} post(s)
+        </span>
+        <button className="btn btn-ghost btn-sm" onClick={fetchScheduled} style={{ marginLeft: 'auto' }}>🔄 Refresh</button>
+      </div>
+
+      {posts.length === 0 ? (
+        <div className="card">
+          <div className="empty-state">
+            <div className="empty-state-icon">📅</div>
+            <h3>No scheduled posts</h3>
+            <p>Schedule posts from the Posts tab using the ⏰ buttons</p>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {posts.map(post => (
+            <div key={post.id} className="review-card">
+              <div className="review-card-header">
+                <span style={{ fontSize: '20px' }}>{mediaIcons[post.mediaType] || '📝'}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px' }}>
+                    {post.caption?.slice(0, 100) || '(no caption)'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {post.sourceChannel} · {post.category}
+                  </div>
+                </div>
+                <span className="badge badge-scheduled">Scheduled</span>
+              </div>
+              <div className="review-card-actions">
+                <button className="btn btn-danger btn-sm" onClick={() => deletePost(post.id)}>🗑️ Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   Analytics Tab
+   ══════════════════════════════════════════════════════════════ */
 function AnalyticsTab({ stats, topPosts }: { stats: Stats | null; topPosts: TopPost[] }) {
   const items = [
     { label: 'Total Posts', value: stats?.totalPosts ?? 0, icon: '📝', max: stats?.totalPosts ?? 1, variant: '' },
@@ -579,31 +1034,6 @@ function AnalyticsTab({ stats, topPosts }: { stats: Stats | null; topPosts: TopP
                   👍 {p.likes} &nbsp; 👁️ {p.views} &nbsp; ❤️ {p.favorites} &nbsp; ✅ {p.going}
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Bot Commands Reference */}
-      <div className="card">
-        <h3 style={{ fontWeight: 700, marginBottom: '20px', fontSize: '16px' }}>🤖 Admin Bot Commands</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-          {[
-            { cmd: '/start', desc: 'Initialize bot' },
-            { cmd: '/channels', desc: 'List source channels' },
-            { cmd: '/addchannel @ch Cat', desc: 'Add a channel' },
-            { cmd: '/removechannel @ch', desc: 'Remove channel' },
-            { cmd: '/pending', desc: 'Review pending posts' },
-            { cmd: '/scheduled', desc: 'View scheduled posts' },
-            { cmd: '/analytics', desc: 'View stats in bot' },
-            { cmd: '/search keyword', desc: 'Search posts' },
-            { cmd: '/publish postId', desc: 'Publish specific post' },
-            { cmd: '/settings', desc: 'Bot settings' },
-            { cmd: '/help', desc: 'Help guide' },
-          ].map(item => (
-            <div key={item.cmd} style={{ background: 'var(--bg-surface)', borderRadius: '10px', padding: '12px 14px', border: '1px solid var(--border)' }}>
-              <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--accent-blue)', fontFamily: 'monospace' }}>{item.cmd}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{item.desc}</div>
             </div>
           ))}
         </div>
