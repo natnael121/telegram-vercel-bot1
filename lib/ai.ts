@@ -1,11 +1,19 @@
 // ============================================================
-// AI Processing Service - OpenAI integration
+// AI Processing Service - Groq/OpenAI integration
 // ============================================================
 import OpenAI from 'openai';
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+const baseURL = process.env.GROQ_API_KEY ? 'https://api.groq.com/openai/v1' : undefined;
+
+const openai = apiKey
+  ? new OpenAI({
+      apiKey,
+      baseURL,
+    })
   : null;
+
+const defaultModel = process.env.GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
 
 async function askAI(
   system: string,
@@ -14,12 +22,12 @@ async function askAI(
 ): Promise<string> {
 
   if (!openai) {
-    console.warn("OPENAI_API_KEY missing. AI feature disabled.");
+    console.warn("AI API Key missing. AI feature disabled.");
     return text;
   }
 
   const res = await openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    model: process.env.GROQ_MODEL || process.env.OPENAI_MODEL || defaultModel,
     messages: [
       {
         role: 'system',
